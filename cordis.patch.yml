@@ -1,0 +1,13 @@
+# Self-Harness DSH — shopping harness bundle patch.
+#
+# Applied when this bundle is installed into a profile. It inserts the
+# ShopSimulator tool plugin by its bare package name. The name resolves through
+# the profile's node_modules (the symlink `dsh plugin add` establishes for this
+# package), so the specifier is the package name, not a relative path.
+
+- insert:
+    - id: shop-tools
+      name: '@self-harness-dsh/shop-tools'
+      config:
+        baseUrl: !!js process.env.SHOPSIM_BASE_URL ?? 'http://127.0.0.1:5700'
+        timeoutMs: !!js Number(process.env.SHOPSIM_TIMEOUT_MS ?? 60000)

@@ -1,0 +1,5 @@
+# Self-Harness DSH — dependencies and secrets that must never be committed.
+.env
+.dsh-home/
+.dsh-sessions/
+node_modules/
