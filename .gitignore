@@ -3,3 +3,4 @@
 .dsh-home/
 .dsh-sessions/
 node_modules/
+.parallel-task-*.log
