@@ -35,6 +35,9 @@ git -C "$DSH_DIR" checkout "$DSH_COMMIT" 2>/dev/null || true
 echo "==> [1/3] 安装 dsh 依赖 (pnpm install)"
 ( cd "$DSH_DIR" && pnpm install )
 
+echo "==> [1/3] 构建 dsh (pnpm run build)"
+( cd "$DSH_DIR" && pnpm run build )
+
 echo "==> [2/3] 建 ShopSimulator 虚拟环境 (python 3.10)"
 if [[ ! -x "$SHOPSIM_VENV/bin/python" ]]; then
   uv venv --python 3.10 "$SHOPSIM_VENV"
