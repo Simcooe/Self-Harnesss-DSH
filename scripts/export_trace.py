@@ -68,7 +68,7 @@ def _raw_state(raw: dict) -> dict:
     }
 
 
-def export(events: list[dict]) -> dict:
+def export(events: list[dict], reset_result: dict | None = None) -> dict:
     task = ""
     for event in events:
         if event.get("type") != "user/message":
@@ -136,10 +136,7 @@ def export(events: list[dict]) -> dict:
     elif model_steps:
         terminal = {"done": False, "termination_reason": None, "reward": None, "reward_valid": None, "reward_type": None, "purchase_success": None, "purchase": {}}
 
-    # reset 原生返回：run_task.sh 若落盘 reset.json，则随 session 一起带上
-    reset = None
-    session_file = None
-    # 由调用方决定 reset 文件位置；这里不硬编码，输出里留空字段占位
+    # reset 原生返回：run_task.sh 落盘 reset-env<N>.json，随 session 一起带上
     return {
         "task": task,
         "step_count": len(model_steps),
@@ -148,7 +145,7 @@ def export(events: list[dict]) -> dict:
             "terminal": terminal,
         },
         "raw_trace": {
-            "reset": reset,
+            "reset": reset_result,
             "steps": raw_steps,
         },
     }
@@ -160,7 +157,15 @@ def main(argv: list[str]) -> int:
         return 1
     src = Path(argv[1])
     dst = Path(argv[2]) if len(argv) > 2 else Path(str(src) + ".trace.json")
-    result = export(read_session(src))
+
+    reset_result = None
+    if len(argv) > 3:
+        reset_path = Path(argv[3])
+        if reset_path.exists():
+            payload = json.loads(reset_path.read_text(encoding="utf-8"))
+            reset_result = payload.get("result") if isinstance(payload, dict) else None
+
+    result = export(read_session(src), reset_result=reset_result)
     dst.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {dst}  (steps={result['step_count']})")
     return 0

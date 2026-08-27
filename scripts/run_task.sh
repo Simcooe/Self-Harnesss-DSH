@@ -57,3 +57,17 @@ export DSH_HOME
 DSH_CHECKOUT="${DSH_CHECKOUT:-$ROOT/deps/deepseek-harness}"
 cd "$DSH_CHECKOUT"
 pnpm dsh --profile headless "$TASK"
+
+# 跑完后自动导出最新 session 的 trace 到 runs/
+LATEST_SESSION="$(python3 -c "
+import glob, os
+base = os.path.expanduser('$DSH_HOME/sessions')
+dirs = sorted(glob.glob(os.path.join(base, '**', 'session-*'), recursive=True), key=os.path.getmtime)
+print(dirs[-1] if dirs else '')
+")"
+if [[ -n "$LATEST_SESSION" ]]; then
+  SESSION_FILE="$LATEST_SESSION/session.jsonl.zstd"
+  TRACE_NAME="trace-env${ENV_IDX}-$(date +%s).json"
+  python3 "$ROOT/scripts/export_trace.py" "$SESSION_FILE" "$RUNS_DIR/$TRACE_NAME" "$RUNS_DIR/reset-env${ENV_IDX}.json"
+  echo "==> trace 已导出: $RUNS_DIR/$TRACE_NAME" >&2
+fi
