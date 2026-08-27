@@ -4,3 +4,4 @@
 .dsh-sessions/
 node_modules/
 .parallel-task-*.log
+runs/

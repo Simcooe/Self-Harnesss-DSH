@@ -34,6 +34,11 @@ RESET_JSON="$(curl -s -X POST "$SHOPSIM_BASE_URL/api/shop_agent" \
   -d "{\"action\":\"reset\",\"idx\":$TASK_IDX}")"
 ENV_IDX="$(echo "$RESET_JSON" | python3 -c 'import sys,json; print(json.load(sys.stdin)["result"]["env_idx"])')"
 
+# 落盘 reset 原生返回（供 raw_trace 使用）
+RUNS_DIR="${TRACE_OUT_DIR:-$ROOT/runs}"
+mkdir -p "$RUNS_DIR"
+echo "$RESET_JSON" > "$RUNS_DIR/reset-env$ENV_IDX.json"
+
 echo "==> leased env_idx=$ENV_IDX (task_idx=$TASK_IDX)" >&2
 
 cleanup() {

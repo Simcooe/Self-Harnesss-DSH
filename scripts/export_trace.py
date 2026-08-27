@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
 """把 dsh 的 session.jsonl.zstd 导出成结构化购物 trace。
 
-产出（JSON）：
+产出（JSON）分两个视角：
   task            - 任务文本（source.kind == "user" 的那条 user/message）
-  steps[]         - 每个交互步：
-      step           - step 序号
-      tool_name      - 模型调用的工具（search / click / finish）
-      tool_args      - 工具参数
-      observation    - 模型这一步能看到的文本（observation + 按钮列表）
-      meta           - 模型看不到、供评测/诊断用的结构化证据
-  terminal        - 终局评测信号（最后一个 tool/result 的 meta 里的 done/终止/奖励）
+  model_trace     - 模型可见的 trace（处理过）：
+      steps[]       - 每个交互步：
+          step / tool_name / tool_args
+          observation  - 模型这一步能看到的文本（终局 reward/goal 已裁掉）
+      terminal      - 终局评测信号（done/终止/奖励）
+  raw_trace       - 环境原生返回（未处理）：
+      steps[]       - 每个交互步：tool_name / tool_args / raw
+          raw          - 环境 interact 完整 result（含 instruction 原文、goal、reward_detail 等）
+      reset         - reset 的原生返回（如果 run_task.sh 落盘了 reset.json）
 
 用法:
   python scripts/export_trace.py <session.jsonl.zstd> [out.json]
@@ -52,10 +54,22 @@ def text_of_message(message: dict) -> str:
     return ""
 
 
+def _raw_state(raw: dict) -> dict:
+    """从环境原生 result 里抽出终局评测信号（与模型可见面无关）。"""
+    reward_detail = raw.get("reward_detail")
+    return {
+        "done": raw.get("done"),
+        "termination_reason": raw.get("termination_reason"),
+        "reward": raw.get("reward"),
+        "reward_valid": raw.get("reward_valid"),
+        "reward_type": reward_detail.get("reward_type") if isinstance(reward_detail, dict) else None,
+        "purchase_success": reward_detail.get("purchase_success") if isinstance(reward_detail, dict) else None,
+        "purchase": raw.get("purchase"),
+    }
+
+
 def export(events: list[dict]) -> dict:
     task = ""
-    steps = []
-
     for event in events:
         if event.get("type") != "user/message":
             continue
@@ -64,7 +78,9 @@ def export(events: list[dict]) -> dict:
             task = text_of_message(event.get("data", {}))
             break
 
-    # 逐 step 组装：tool/call 定义动作，紧跟的 tool/result 提供 observation + meta
+    model_steps = []
+    raw_steps = []
+
     pending = None
     for event in events:
         t = event.get("type")
@@ -83,51 +99,58 @@ def export(events: list[dict]) -> dict:
             }
         elif t == "tool/result" and pending is not None:
             message = data.get("message", {})
-            meta = data.get("meta")
-            steps.append(
+            meta = data.get("meta") or {}
+            # meta 里存的是 { state, raw }；旧版本可能直接是 state
+            raw = meta.get("raw") if isinstance(meta, dict) else None
+            state = meta.get("state") if isinstance(meta, dict) else meta
+
+            model_steps.append(
                 {
                     "step": pending["step"],
                     "tool_name": pending["tool_name"],
                     "tool_args": pending["tool_args"],
                     "observation": text_of_message(message),
-                    "meta": meta,
                 }
             )
+            if raw is not None:
+                raw_steps.append(
+                    {
+                        "step": pending["step"],
+                        "tool_name": pending["tool_name"],
+                        "tool_args": pending["tool_args"],
+                        "raw": raw,
+                    }
+                )
             pending = None
 
+    # 终局信号：优先取最后一个 done 的 raw；否则兜底取最后一步
     terminal = None
-    for step in reversed(steps):
-        meta = step.get("meta")
-        if isinstance(meta, dict) and meta.get("done"):
-            terminal = {
-                "done": meta.get("done"),
-                "termination_reason": meta.get("termination_reason"),
-                "reward": meta.get("reward"),
-                "reward_valid": meta.get("reward_valid"),
-                "reward_type": meta.get("reward_type"),
-                "purchase_success": meta.get("purchase_success"),
-                "purchase": meta.get("purchase"),
-            }
-            break
-    # 环境可能未触发 done 就自然收尾：记录最后一 step 的 meta 作为兜底
-    if terminal is None and steps:
-        meta = steps[-1].get("meta")
-        if isinstance(meta, dict):
-            terminal = {
-                "done": meta.get("done"),
-                "termination_reason": meta.get("termination_reason"),
-                "reward": meta.get("reward"),
-                "reward_valid": meta.get("reward_valid"),
-                "reward_type": meta.get("reward_type"),
-                "purchase_success": meta.get("purchase_success"),
-                "purchase": meta.get("purchase"),
-            }
+    if raw_steps:
+        for step in reversed(raw_steps):
+            raw = step.get("raw") or {}
+            if raw.get("done"):
+                terminal = _raw_state(raw)
+                break
+        if terminal is None:
+            terminal = _raw_state(raw_steps[-1].get("raw") or {})
+    elif model_steps:
+        terminal = {"done": False, "termination_reason": None, "reward": None, "reward_valid": None, "reward_type": None, "purchase_success": None, "purchase": {}}
 
+    # reset 原生返回：run_task.sh 若落盘 reset.json，则随 session 一起带上
+    reset = None
+    session_file = None
+    # 由调用方决定 reset 文件位置；这里不硬编码，输出里留空字段占位
     return {
         "task": task,
-        "step_count": len(steps),
-        "steps": steps,
-        "terminal": terminal,
+        "step_count": len(model_steps),
+        "model_trace": {
+            "steps": model_steps,
+            "terminal": terminal,
+        },
+        "raw_trace": {
+            "reset": reset,
+            "steps": raw_steps,
+        },
     }
 
 

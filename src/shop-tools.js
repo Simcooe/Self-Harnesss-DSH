@@ -66,7 +66,8 @@ function toAction(name, args) {
   return null
 }
 
-async function interact(cfg, action, signal) {  if (cfg.envIdx === undefined) {
+async function interact(cfg, action, signal) {
+  if (cfg.envIdx === undefined) {
     throw new Error(
       'shop-tools: SHOPSIM_ENV_IDX is not set; reset the environment before running the agent',
     )
@@ -115,19 +116,6 @@ function shopTool(cfg, name, description, parameters, actionOf) {
     name,
     description,
     parameters,
-    output: {
-      schema: {
-        type: 'object',
-        properties: {
-          text: { type: 'string' },
-          state: { type: 'object' },
-        },
-        required: ['text', 'state'],
-        additionalProperties: false,
-      },
-      render: (_args, value) => [{ type: 'text', text: value.text }],
-      presentationMeta: (_args, value) => value.state,
-    },
     async execute(args, exec) {
       const action = actionOf(args)
       if (action === null) throw new Error(`shop-tools: unknown tool ${name}`)
@@ -135,7 +123,22 @@ function shopTool(cfg, name, description, parameters, actionOf) {
       return {
         text: modelVisibleText(result),
         state: evidenceState(result),
+        raw: result,
       }
+    },
+    output: {
+      schema: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },
+          state: { type: 'object' },
+          raw: { type: 'object' },
+        },
+        required: ['text', 'state', 'raw'],
+        additionalProperties: false,
+      },
+      render: (_args, value) => [{ type: 'text', text: value.text }],
+      presentationMeta: (_args, value) => ({ state: value.state, raw: value.raw }),
     },
   }
 }
