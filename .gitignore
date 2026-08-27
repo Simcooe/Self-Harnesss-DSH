@@ -5,3 +5,14 @@
 node_modules/
 .parallel-task-*.log
 runs/
+
+# dsh 上游 clone（scripts/setup.sh 生成）
+deps/
+
+# ShopSimulator 生成物（scripts/setup.sh 生成）
+environments/ShopSimulator/shop_env/.venv-shopsim/
+environments/ShopSimulator/shop_env/search_engine/
+environments/ShopSimulator/shop_env/data/*.json
+environments/ShopSimulator/shop_env/data/*.preparing
+environments/ShopSimulator/shop_env/**/__pycache__/
+environments/ShopSimulator/shop_env/shop_env/*.log

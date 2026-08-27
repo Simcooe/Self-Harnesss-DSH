@@ -53,7 +53,7 @@ export SHOPSIM_ENV_IDX="$ENV_IDX"
 export SHOPSIM_BASE_URL
 export DSH_HOME
 
-# dsh 跑在 deepseek-harness checkout 里；从那里用 pnpm 启动
-DSH_CHECKOUT="${DSH_CHECKOUT:-$ROOT/../deepseek-harness}"
+# dsh 跑在 deps/deepseek-harness checkout 里；从那里用 pnpm 启动
+DSH_CHECKOUT="${DSH_CHECKOUT:-$ROOT/deps/deepseek-harness}"
 cd "$DSH_CHECKOUT"
 pnpm dsh --profile headless "$TASK"
