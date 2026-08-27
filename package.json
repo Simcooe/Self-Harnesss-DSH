@@ -5,7 +5,9 @@
   "type": "module",
   "main": "src/shop-tools.js",
   "exports": {
-    ".": "./src/shop-tools.js"
+    ".": "./src/shop-tools.js",
+    "./instructions": "./harness/plugins/instructions.js",
+    "./verify-middleware": "./harness/plugins/verify-middleware.js"
   },
   "license": "MIT",
   "dsh": {

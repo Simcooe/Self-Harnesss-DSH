@@ -10,4 +10,11 @@
       name: '@self-harness-dsh/shop-tools'
       config:
         baseUrl: !!js process.env.SHOPSIM_BASE_URL ?? 'http://127.0.0.1:5700'
+        envIdx: !!js process.env.SHOPSIM_ENV_IDX
         timeoutMs: !!js Number(process.env.SHOPSIM_TIMEOUT_MS ?? 60000)
+
+    - id: instructions
+      name: '@self-harness-dsh/shop-tools/instructions'
+
+    - id: verify-middleware
+      name: '@self-harness-dsh/shop-tools/verify-middleware'
