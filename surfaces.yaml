@@ -1,0 +1,113 @@
+# Editable Surface 清单 — 对齐 Self-Harness 的 7 个机制族（去掉 permission_interrupt）。
+#
+# 这是「可编辑面」的权威定义：进化器（proposer）只能在下面声明的面里做
+# bounded 修改，不能发明清单之外的面。结构与 Self-Harness 的 hooks.py 对齐：
+#
+#   机制族 (mechanism_family) ── 一个面 (surface) ── 一种编辑类型 (kind)
+#
+# kind 取值（对应 Self-Harness 的三档编辑代价）：
+#   prompt_text  - 改一段文本（Self-Harness 的 prompt_instruction 族，最轻）
+#   literal      - 改一个字面量/配置值（Self-Harness 的 LITERAL_RETURN_HOOKS）
+#   composite    - 插入/改写一个新插件（Self-Harness 的 COMPOSITE_HOOKS，最重）
+#   reference    - 引用 dsh 自带包，只改其 config 字段
+#   placeholder  - 声明了面但当前为空（Self-Harness 的 build_subagents/skills 返回 []）
+#
+# 每个面下 editable_fields 是 proposer 允许触碰的最小编辑点。
+
+version: 1
+
+mechanism_families:
+
+  - family: prompt_instruction
+    description: 引导/验证/恢复指令（模型在每一轮看到的提示文本）
+    surfaces:
+      - id: system-prompt
+        kind: prompt_text
+        dsh: '@deepseek-ai/dsh-system-prompt'
+        editable_fields:
+          - persona
+        note: 购物 agent 的人设与总约束
+
+      - id: bootstrap-instruction
+        kind: prompt_text
+        dsh: self
+        editable_fields:
+          - instruction
+        note: 开局引导（先做什么）
+
+      - id: execution-instruction
+        kind: prompt_text
+        dsh: self
+        editable_fields:
+          - instruction
+        note: 执行纪律（多久必须核验/购买，卡循环就换策略）
+
+      - id: verification-instruction
+        kind: prompt_text
+        dsh: self
+        editable_fields:
+          - instruction
+        note: 收尾前如何验证
+
+      - id: failure-recovery-instruction
+        kind: prompt_text
+        dsh: self
+        editable_fields:
+          - instruction
+        note: 工具失败后怎么恢复
+
+  - family: tool_configuration
+    description: 模型可调用的购物工具集合
+    surfaces:
+      - id: shop-tools
+        kind: composite
+        dsh: self
+        editable_fields:
+          - tools
+        note: 在 apply() 里 register 的 search/click/finish 等工具；进化 = 增删工具
+
+  - family: middleware
+    description: 触发式提示中间件（工具失败/循环时注入额外指令）
+    surfaces:
+      - id: verify-middleware
+        kind: composite
+        dsh: self
+        editable_fields:
+          - instruction
+          - predicate
+        note: 默认空；进化 = 新增一个触发式 middleware
+
+  - family: runtime_control
+    description: 循环断路器与工具超时
+    surfaces:
+      - id: repeat-tool-reminder
+        kind: reference
+        dsh: '@deepseek-ai/dsh-repeat-tool-reminder'
+        editable_fields:
+          - thresholds
+          - argumentsPreviewChars
+        note: 连续重复调用阈值；治购物 agent 的搜索死循环
+
+      - id: timeout-policy
+        kind: reference
+        dsh: '@deepseek-ai/dsh-tool-call-timeout-policy'
+        editable_fields: []
+        note: 零配置；工具级超时，可改在 shop-tools 的 timeoutMs
+
+  - family: subagent
+    description: 子 agent 委派（购物场景当前用不上，初始为空）
+    surfaces:
+      - id: subagent
+        kind: placeholder
+        dsh: '@deepseek-ai/dsh-subagent'
+        editable_fields: []
+        note: Self-Harness 的 build_subagents 初始为 []；购物场景预计不会进化
+
+  - family: skill_procedure
+    description: 可复用 skill（购物场景当前用不上，初始为空）
+    surfaces:
+      - id: skills
+        kind: placeholder
+        dsh: '@deepseek-ai/dsh-skill'
+        editable_fields: []
+        note: Self-Harness 的 build_skills 初始为 []；购物场景预计不会进化
