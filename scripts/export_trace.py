@@ -1,28 +1,31 @@
 #!/usr/bin/env python3
-"""把 dsh 的 session.jsonl.zstd 导出成结构化购物 trace。
-
-产出（JSON）分两个视角：
-  task            - 任务文本（source.kind == "user" 的那条 user/message）
-  model_trace     - 模型可见的 trace（处理过）：
-      steps[]       - 每个交互步：
-          step / tool_name / tool_args
-          observation  - 模型这一步能看到的文本（终局 reward/goal 已裁掉）
-      terminal      - 终局评测信号（done/终止/奖励）
-  raw_trace       - 环境原生返回（未处理）：
-      steps[]       - 每个交互步：tool_name / tool_args / raw
-          raw          - 环境 interact 完整 result（含 instruction 原文、goal、reward_detail 等）
-      reset         - reset 的原生返回（如果 run_task.sh 落盘了 reset.json）
+"""把 dsh 的 session.jsonl.zstd 导出成两个视角的 trace 文件。
 
 用法:
-  python scripts/export_trace.py <session.jsonl.zstd> [out.json]
+  python scripts/export_trace.py <session_dir|session.jsonl.zstd> \
+      --out-dir <dir> --id <id> [--reset <reset.json>]
+
+产出（<out-dir>/ 下）:
+  <id>.model_trace.json   模型可见视角（observation 已裁终局 reward/goal）
+  <id>.raw_trace.json     环境原生视角（含 goal、reward_detail、progress 等）
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
 from pathlib import Path
+
+
+def resolve_session_file(path: Path) -> Path:
+    if path.is_dir():
+        candidate = path / "session.jsonl.zstd"
+        if candidate.exists():
+            return candidate
+        raise FileNotFoundError(f"{path} 下没有 session.jsonl.zstd")
+    return path
 
 
 def read_session(path: Path) -> list[dict]:
@@ -55,7 +58,6 @@ def text_of_message(message: dict) -> str:
 
 
 def _raw_state(raw: dict) -> dict:
-    """从环境原生 result 里抽出终局评测信号（与模型可见面无关）。"""
     reward_detail = raw.get("reward_detail")
     return {
         "done": raw.get("done"),
@@ -68,7 +70,7 @@ def _raw_state(raw: dict) -> dict:
     }
 
 
-def export(events: list[dict], reset_result: dict | None = None) -> dict:
+def build_traces(events: list[dict], reset_result: dict | None = None) -> tuple[dict, dict]:
     task = ""
     for event in events:
         if event.get("type") != "user/message":
@@ -100,9 +102,7 @@ def export(events: list[dict], reset_result: dict | None = None) -> dict:
         elif t == "tool/result" and pending is not None:
             message = data.get("message", {})
             meta = data.get("meta") or {}
-            # meta 里存的是 { state, raw }；旧版本可能直接是 state
             raw = meta.get("raw") if isinstance(meta, dict) else None
-            state = meta.get("state") if isinstance(meta, dict) else meta
 
             model_steps.append(
                 {
@@ -123,7 +123,6 @@ def export(events: list[dict], reset_result: dict | None = None) -> dict:
                 )
             pending = None
 
-    # 终局信号：优先取最后一个 done 的 raw；否则兜底取最后一步
     terminal = None
     if raw_steps:
         for step in reversed(raw_steps):
@@ -133,43 +132,58 @@ def export(events: list[dict], reset_result: dict | None = None) -> dict:
                 break
         if terminal is None:
             terminal = _raw_state(raw_steps[-1].get("raw") or {})
-    elif model_steps:
-        terminal = {"done": False, "termination_reason": None, "reward": None, "reward_valid": None, "reward_type": None, "purchase_success": None, "purchase": {}}
+    else:
+        terminal = {
+            "done": False, "termination_reason": None, "reward": None,
+            "reward_valid": None, "reward_type": None,
+            "purchase_success": None, "purchase": {},
+        }
 
-    # reset 原生返回：run_task.sh 落盘 reset-env<N>.json，随 session 一起带上
-    return {
+    model_trace = {
         "task": task,
         "step_count": len(model_steps),
-        "model_trace": {
-            "steps": model_steps,
-            "terminal": terminal,
-        },
-        "raw_trace": {
-            "reset": reset_result,
-            "steps": raw_steps,
-        },
+        "steps": model_steps,
+        "terminal": terminal,
     }
+    raw_trace = {
+        "task": task,
+        "step_count": len(raw_steps),
+        "reset": reset_result,
+        "steps": raw_steps,
+    }
+    return model_trace, raw_trace
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) < 2:
-        print(__doc__, file=sys.stderr)
-        return 1
-    src = Path(argv[1])
-    dst = Path(argv[2]) if len(argv) > 2 else Path(str(src) + ".trace.json")
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("session", help="session 目录 或 session.jsonl.zstd 文件")
+    parser.add_argument("--out-dir", required=True, help="trace 输出目录")
+    parser.add_argument("--id", required=True, help="trace 文件的 id 前缀")
+    parser.add_argument("--reset", default=None, help="reset 原生返回 JSON 文件")
+    args = parser.parse_args(argv)
+
+    session_file = resolve_session_file(Path(args.session))
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     reset_result = None
-    if len(argv) > 3:
-        reset_path = Path(argv[3])
+    if args.reset:
+        reset_path = Path(args.reset)
         if reset_path.exists():
             payload = json.loads(reset_path.read_text(encoding="utf-8"))
             reset_result = payload.get("result") if isinstance(payload, dict) else None
 
-    result = export(read_session(src), reset_result=reset_result)
-    dst.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    print(f"wrote {dst}  (steps={result['step_count']})")
+    model_trace, raw_trace = build_traces(read_session(session_file), reset_result=reset_result)
+
+    model_path = out_dir / f"{args.id}.model_trace.json"
+    raw_path = out_dir / f"{args.id}.raw_trace.json"
+    model_path.write_text(json.dumps(model_trace, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    raw_path.write_text(json.dumps(raw_trace, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    print(f"wrote {model_path}")
+    print(f"wrote {raw_path}")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv))
+    raise SystemExit(main(sys.argv[1:]))
