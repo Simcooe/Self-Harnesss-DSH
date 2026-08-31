@@ -17,3 +17,8 @@ environments/ShopSimulator/shop_env/data/*.preparing
 environments/ShopSimulator/shop_env/**/__pycache__/
 environments/ShopSimulator/shop_env/shop_env/*.log
 .sessions*
+
+# 评测生成物（由 eval/ 下脚本生成，可再生）
+eval/goals.jsonl
+eval/rubrics/
+eval/judgments/
